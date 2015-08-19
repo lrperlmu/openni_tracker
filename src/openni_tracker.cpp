@@ -19,6 +19,65 @@ xn::UserGenerator  g_UserGenerator;
 XnBool g_bNeedPose   = FALSE;
 XnChar g_strPose[20] = "";
 
+// get the USB port that the deviced passed in is plugged into
+std::string getUsbPort(xn::NodeInfo deviceNodeInfo) {
+  // get the id of the usb port the device is plugged into
+  const XnChar *creationInfo = deviceNodeInfo.GetCreationInfo();
+  std::string creationInfoString = std::string(creationInfo);
+  std::size_t lastSlashIdx = creationInfoString.find_last_of('/');
+  std::string usbPort = creationInfoString.substr(lastSlashIdx + 1);
+  return usbPort;
+}
+
+// read the ros parameter desired_serial
+std::string getDesiredSerialNumber() {
+  std::string desiredSerial;
+  if (!ros::param::get("~desired_serial", desiredSerial)) {
+    printf("Parameter '_desired_serial' not found.\n");
+    exit(1);
+  }
+  printf("Desired Serial Number %s\n", desiredSerial.c_str());
+  return desiredSerial;
+}
+
+// get the actual serial number of the device passed in
+std::string getSerialNumber(xn::NodeInfo deviceNodeInfo) {
+  std::string usbPort = getUsbPort(deviceNodeInfo);
+
+  // call lsusb
+  FILE *fp;
+  char path[1035];
+  fp = popen("lsusb -v -d 045e:02ae", "r");
+  if (fp == NULL) {
+    printf("Failed to run lsusb\n" );
+    exit(1);
+  }
+
+  // look for the line starting with 'Bus' and containing the device's usbPort
+  // After it, look for the line containing 'Serial' and get the serial number
+  bool thisEntry = false;
+  std::string usbPortWithColon = usbPort + ":";
+  std::string serialFound("");
+  while (fgets(path, sizeof(path)-1, fp) != NULL) {
+    std::string strLine = std::string(path);
+    // determine whether this multiline entry represents the device in the given port
+    if (strLine.find("Bus") == 0) {
+      if (strLine.find(usbPortWithColon) != std::string::npos) {
+        thisEntry = true;
+      } else {
+        thisEntry = false;
+      }
+    }
+
+    // get the serial number
+    if ((strLine.find("Serial") != std::string::npos) && thisEntry) {
+      std::size_t lastSpaceIdx = strLine.find_last_of(" ");
+      serialFound = strLine.substr(lastSpaceIdx + 1, 16);
+    }
+  }
+  return serialFound;
+}
+
 void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
     ROS_INFO("New User %d", nId);
 
@@ -138,6 +197,8 @@ int main(int argc, char **argv) {
     ros::init(argc, argv, "tracker_1");
     ros::NodeHandle nh;
 
+    string strDesiredSerial = getDesiredSerialNumber();
+
     string configFilename = ros::package::getPath("openni_tracker") + "/openni_tracker.xml";
     XnStatus nRetVal = g_Context.InitFromXmlFile(configFilename.c_str());
     CHECK_RC(nRetVal, "InitFromXml");
@@ -152,6 +213,8 @@ int main(int argc, char **argv) {
 
 
    // SELECTION OF THE DEVICE
+    int auto_select = 0; // device automatically selected
+
     xn::EnumerationErrors errors;
     xn::Device g_Device;
         // find devices
@@ -185,7 +248,16 @@ int main(int argc, char **argv) {
                 deviceNode.GetIdentificationCap().GetDeviceName(strDeviceName, nLength);
                 nLength = nStringBufferSize;
                 deviceNode.GetIdentificationCap().GetSerialNumber(strSerialNumber, nLength);
-                printf("[%d] %s (%s)\n", i, strDeviceName, strSerialNumber);
+
+                std::string strUsbPort = getUsbPort(deviceNodeInfo);
+                std::string strActualSerial = getSerialNumber(deviceNodeInfo);
+                printf("[%d] name:%s serial(xn):%s usb:%s serial(lsusb):%s\n",
+                       i, strDeviceName, strSerialNumber, strUsbPort.c_str(),
+                       strActualSerial.c_str());
+
+                if (strActualSerial.compare(strDesiredSerial) == 0) {
+                  auto_select = i;
+                }
             }
             else
             {
@@ -198,11 +270,16 @@ int main(int argc, char **argv) {
                 deviceNode.Release();
             }
         }
-        printf("\n");
-        printf("Choose device to open (1): ");
 
-        int chosen = 1;
-        int nRetval = scanf("%d", &chosen);
+        if (auto_select == 0) {
+          auto_select = 1;
+          printf("No serial number match found. Device 1 automatically selected.\n");
+        } else {
+          printf("Device %d automatically selected based on serial number match.\n",
+                 auto_select);
+        }
+        printf("\n");
+        int chosen = auto_select;
 
         // create it
         xn::NodeInfoList::Iterator it = list.Begin();
@@ -257,11 +334,10 @@ int main(int argc, char **argv) {
                     depthNode.Release();
                 }
             }
-            printf("\n");
-        printf("Choose device to open (1): ");
 
         int chosen_depth = 1;
-        int nRetval_depth = scanf("%d", &chosen);
+        printf("Device %d automatically selected.\n", chosen_depth);
+        printf("\n");
 
         // create it
         xn::NodeInfoList::Iterator it_depth = list_depth.Begin();
