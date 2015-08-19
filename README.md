@@ -30,3 +30,6 @@ Bus 001 Device 031: ID 045e:02ae Microsoft Corp. Xbox NUI Camera
 Bus 002 Device 018: ID 045e:02ae Microsoft Corp. Xbox NUI Camera
   iSerial                 3 A00123A01940048A
 ```
+
+### Credit
+Thanks to Stephane M from [this question on rosanswers](http://answers.ros.org/question/48060/running-openni_tracker-with-multiple-kinects/) for the low level code that enables device selection. 
