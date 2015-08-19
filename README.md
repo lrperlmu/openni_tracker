@@ -24,7 +24,7 @@ If it's much different, you'll have to modify the `getSerialNumber` function in
 serial number.
 
 ```
-$ lsusb -v -d 045e:02ae | grep // -e 'Bus\|iSerial'
+$ lsusb -v -d 045e:02ae | grep -e 'Bus\|iSerial'
 Bus 001 Device 031: ID 045e:02ae Microsoft Corp. Xbox NUI Camera
   iSerial                 3 B00312327745048B
 Bus 002 Device 018: ID 045e:02ae Microsoft Corp. Xbox NUI Camera
