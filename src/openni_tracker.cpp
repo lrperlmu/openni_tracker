@@ -33,10 +33,12 @@ std::string getUsbPort(xn::NodeInfo deviceNodeInfo) {
 std::string getDesiredSerialNumber() {
   std::string desiredSerial;
   if (!ros::param::get("~desired_serial", desiredSerial)) {
-    printf("Parameter '_desired_serial' not found.\n");
-    exit(1);
+    if (!ros::param::get("desired_serial", desiredSerial)) {
+      ROS_ERROR("Parameter 'desired_serial' not found.");
+      exit(1);
+    }
   }
-  printf("Desired Serial Number %s\n", desiredSerial.c_str());
+  ROS_INFO("Desired Serial Number %s", desiredSerial.c_str());
   return desiredSerial;
 }
 
@@ -49,7 +51,7 @@ std::string getSerialNumber(xn::NodeInfo deviceNodeInfo) {
   char path[1035];
   fp = popen("lsusb -v -d 045e:02ae", "r");
   if (fp == NULL) {
-    printf("Failed to run lsusb\n" );
+    ROS_ERROR("Failed to run lsusb");
     exit(1);
   }
 
@@ -153,7 +155,7 @@ void publishTransform(XnUserID const& user, XnSkeletonJoint const& joint, string
     br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, child_frame_no));
 }
 
-void publishTransforms(const std::string& frame_id) {
+void publishTransforms(const std::string& frame_id, const std::string& prefix) {
     XnUserID users[15];
     XnUInt16 users_count = 15;
     g_UserGenerator.GetUsers(users, users_count);
@@ -164,25 +166,25 @@ void publishTransforms(const std::string& frame_id) {
             continue;
 
 
-        publishTransform(user, XN_SKEL_HEAD,           frame_id, "head");
-        publishTransform(user, XN_SKEL_NECK,           frame_id, "neck");
-        publishTransform(user, XN_SKEL_TORSO,          frame_id, "torso");
+        publishTransform(user, XN_SKEL_HEAD,           frame_id, prefix + "head");
+        publishTransform(user, XN_SKEL_NECK,           frame_id, prefix + "neck");
+        publishTransform(user, XN_SKEL_TORSO,          frame_id, prefix + "torso");
 
-        publishTransform(user, XN_SKEL_LEFT_SHOULDER,  frame_id, "left_shoulder");
-        publishTransform(user, XN_SKEL_LEFT_ELBOW,     frame_id, "left_elbow");
-        publishTransform(user, XN_SKEL_LEFT_HAND,      frame_id, "left_hand");
+        publishTransform(user, XN_SKEL_LEFT_SHOULDER,  frame_id, prefix + "left_shoulder");
+        publishTransform(user, XN_SKEL_LEFT_ELBOW,     frame_id, prefix + "left_elbow");
+        publishTransform(user, XN_SKEL_LEFT_HAND,      frame_id, prefix + "left_hand");
 
-        publishTransform(user, XN_SKEL_RIGHT_SHOULDER, frame_id, "right_shoulder");
-        publishTransform(user, XN_SKEL_RIGHT_ELBOW,    frame_id, "right_elbow");
-        publishTransform(user, XN_SKEL_RIGHT_HAND,     frame_id, "right_hand");
+        publishTransform(user, XN_SKEL_RIGHT_SHOULDER, frame_id, prefix + "right_shoulder");
+        publishTransform(user, XN_SKEL_RIGHT_ELBOW,    frame_id, prefix + "right_elbow");
+        publishTransform(user, XN_SKEL_RIGHT_HAND,     frame_id, prefix + "right_hand");
 
-        publishTransform(user, XN_SKEL_LEFT_HIP,       frame_id, "left_hip");
-        publishTransform(user, XN_SKEL_LEFT_KNEE,      frame_id, "left_knee");
-        publishTransform(user, XN_SKEL_LEFT_FOOT,      frame_id, "left_foot");
+        publishTransform(user, XN_SKEL_LEFT_HIP,       frame_id, prefix + "left_hip");
+        publishTransform(user, XN_SKEL_LEFT_KNEE,      frame_id, prefix + "left_knee");
+        publishTransform(user, XN_SKEL_LEFT_FOOT,      frame_id, prefix + "left_foot");
 
-        publishTransform(user, XN_SKEL_RIGHT_HIP,      frame_id, "right_hip");
-        publishTransform(user, XN_SKEL_RIGHT_KNEE,     frame_id, "right_knee");
-        publishTransform(user, XN_SKEL_RIGHT_FOOT,     frame_id, "right_foot");
+        publishTransform(user, XN_SKEL_RIGHT_HIP,      frame_id, prefix + "right_hip");
+        publishTransform(user, XN_SKEL_RIGHT_KNEE,     frame_id, prefix + "right_knee");
+        publishTransform(user, XN_SKEL_RIGHT_FOOT,     frame_id, prefix + "right_foot");
     }
 }
 
@@ -223,7 +225,7 @@ int main(int argc, char **argv) {
         nRetVal = g_Context.EnumerateProductionTrees(XN_NODE_TYPE_DEVICE, NULL, list, &errors);
     XN_IS_STATUS_OK(nRetVal);
 
-    printf("The following devices were found:\n");
+    ROS_INFO("The following devices were found:");
         int i = 1;
         for (xn::NodeInfoList::Iterator it = list.Begin(); it != list.End(); ++it, ++i)
         {
@@ -251,7 +253,7 @@ int main(int argc, char **argv) {
 
                 std::string strUsbPort = getUsbPort(deviceNodeInfo);
                 std::string strActualSerial = getSerialNumber(deviceNodeInfo);
-                printf("[%d] name:%s serial(xn):%s usb:%s serial(lsusb):%s\n",
+                ROS_INFO("[%d] name:%s serial(xn):%s usb:%s serial(lsusb):%s",
                        i, strDeviceName, strSerialNumber, strUsbPort.c_str(),
                        strActualSerial.c_str());
 
@@ -261,7 +263,7 @@ int main(int argc, char **argv) {
             }
             else
             {
-                printf("[%d] %s\n", i, deviceNodeInfo.GetCreationInfo());
+              ROS_INFO("[%d] %s\n", i, deviceNodeInfo.GetCreationInfo());
             }
 
             // release the device if we created it
@@ -273,12 +275,12 @@ int main(int argc, char **argv) {
 
         if (auto_select == 0) {
           auto_select = 1;
-          printf("No serial number match found. Device 1 automatically selected.\n");
+          ROS_INFO("No serial number match found. Device 1 automatically selected.");
         } else {
-          printf("Device %d automatically selected based on serial number match.\n",
+          ROS_INFO("Device %d automatically selected based on serial number match.",
                  auto_select);
         }
-        printf("\n");
+        ROS_INFO("");
         int chosen = auto_select;
 
         // create it
@@ -290,13 +292,13 @@ int main(int argc, char **argv) {
 
         xn::NodeInfo deviceNode = *it;
         nRetVal = g_Context.CreateProductionTree(deviceNode, g_Device);
-        printf("Production tree of the device created.\n");
+        ROS_INFO("Production tree of the device created.");
 
      // SELECTION OF THE DEPTH GENERATOR
         nRetVal = g_Context.EnumerateProductionTrees(XN_NODE_TYPE_DEPTH, NULL, list_depth, &errors);
         XN_IS_STATUS_OK(nRetVal);
 
-        printf("The following devices were found:\n");
+        ROS_INFO("The following devices were found:");
             int i_depth = 1;
             for (xn::NodeInfoList::Iterator it_depth = list_depth.Begin(); it_depth != list_depth.End(); ++it_depth, ++i_depth)
             {
@@ -321,11 +323,11 @@ int main(int argc, char **argv) {
                     depthNode.GetIdentificationCap().GetDeviceName(strDeviceName, nLength);
                     nLength = nStringBufferSize;
                     depthNode.GetIdentificationCap().GetSerialNumber(strSerialNumber, nLength);
-                    printf("[%d] %s (%s)\n", i, strDeviceName, strSerialNumber);
+                    ROS_INFO("[%d] %s (%s)", i, strDeviceName, strSerialNumber);
                 }
                 else
                 {
-                    printf("[%d] %s\n", i, depthNodeInfo.GetCreationInfo());
+                    ROS_INFO("[%d] %s", i, depthNodeInfo.GetCreationInfo());
                 }
 
                 // release the device if we created it
@@ -336,8 +338,8 @@ int main(int argc, char **argv) {
             }
 
         int chosen_depth = 1;
-        printf("Device %d automatically selected.\n", chosen_depth);
-        printf("\n");
+        ROS_INFO("Device %d automatically selected.", chosen_depth);
+        ROS_INFO("");
 
         // create it
         xn::NodeInfoList::Iterator it_depth = list_depth.Begin();
@@ -348,29 +350,28 @@ int main(int argc, char **argv) {
 
         xn::NodeInfo depthNode = *it_depth;
         nRetVal = g_Context.CreateProductionTree(depthNode, g_DepthGenerator);
-        printf("Production tree of the DepthGenerator created.\n");
+        ROS_INFO("Production tree of the DepthGenerator created.");
 
         nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_DEPTH, g_DepthGenerator);
-        printf("Production tree of the depth generator created.\n");
+        ROS_INFO("Production tree of the depth generator created.");
         XN_IS_STATUS_OK(nRetVal);
-        printf("XN_IS_STATUS_OK(nRetVal).\n");
+        ROS_INFO("XN_IS_STATUS_OK(nRetVal).");
 
 
 
     CHECK_RC(nRetVal, "Find depth generator");
-     printf("CHECK_RC(nRetVal, Find depth generator);\n");
+     ROS_INFO("CHECK_RC(nRetVal, Find depth generator);");
 
     nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
-    printf("User generator found.\n");
+    ROS_INFO("User generator found.");
     if (nRetVal != XN_STATUS_OK) {
         nRetVal = g_UserGenerator.Create(g_Context);
-        printf("User generator created.\n");
+        ROS_INFO("User generator created.");
         CHECK_RC(nRetVal, "Find user generator");
     }
 
     if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_SKELETON)) {
-        printf("Supplied user generator doesn't support skeleton.\n");
-        ROS_INFO("Supplied user generator doesn't support skeleton");
+        ROS_ERROR("Supplied user generator doesn't support skeleton");
         return 1;
     }
 
@@ -401,13 +402,29 @@ int main(int argc, char **argv) {
     ros::Rate r(30);
 
 
-        ros::NodeHandle pnh("~");
-        string frame_id("/kinect1_depth_frame");
-        pnh.getParam("camera_frame_id", frame_id);
+        // ros::NodeHandle pnh("~");
+        // string frame_id("/kinect1_depth_frame");
+        // pnh.getParam("camera_frame_id", frame_id);
+
+    std::string frame_id("/camera_depth_frame");
+    if (!ros::param::get("~camera_frame_id", frame_id)) {
+      if (!ros::param::get("camera_frame_id", frame_id)) {
+        ROS_WARN("Parameter 'camera_frame_id' not found, using default.");
+      }
+    }
+    ROS_INFO("camera_frame_id %s", frame_id.c_str());
+
+    std::string tf_prefix("");
+    if (!ros::param::get("~tf_prefix", tf_prefix)) {
+      if (!ros::param::get("tf_prefix", tf_prefix)) {
+        ROS_WARN("Parameter 'tf_prefix' not found, using default.");
+      }
+    }
+    ROS_INFO("tf_prefix %s", tf_prefix.c_str());
 
     while (ros::ok()) {
         g_Context.WaitAndUpdateAll();
-        publishTransforms(frame_id);
+        publishTransforms(frame_id, tf_prefix);
         r.sleep();
     }
 
