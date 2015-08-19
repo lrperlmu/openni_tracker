@@ -1,4 +1,4 @@
-// openni_tracker.cpp
+// openni_tracker_modified.cpp
 
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -15,38 +15,39 @@ xn::Context        g_Context;
 xn::DepthGenerator g_DepthGenerator;
 xn::UserGenerator  g_UserGenerator;
 
+
 XnBool g_bNeedPose   = FALSE;
 XnChar g_strPose[20] = "";
 
 void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
-	ROS_INFO("New User %d", nId);
+    ROS_INFO("New User %d", nId);
 
-	if (g_bNeedPose)
-		g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
-	else
-		g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
+    if (g_bNeedPose)
+        g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
+    else
+        g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
 }
 
 void XN_CALLBACK_TYPE User_LostUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie) {
-	ROS_INFO("Lost user %d", nId);
+    ROS_INFO("Lost user %d", nId);
 }
 
 void XN_CALLBACK_TYPE UserCalibration_CalibrationStart(xn::SkeletonCapability& capability, XnUserID nId, void* pCookie) {
-	ROS_INFO("Calibration started for user %d", nId);
+    ROS_INFO("Calibration started for user %d", nId);
 }
 
 void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& capability, XnUserID nId, XnBool bSuccess, void* pCookie) {
-	if (bSuccess) {
-		ROS_INFO("Calibration complete, start tracking user %d", nId);
-		g_UserGenerator.GetSkeletonCap().StartTracking(nId);
-	}
-	else {
-		ROS_INFO("Calibration failed for user %d", nId);
-		if (g_bNeedPose)
-			g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
-		else
-			g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
-	}
+    if (bSuccess) {
+        ROS_INFO("Calibration complete, start tracking user %d", nId);
+        g_UserGenerator.GetSkeletonCap().StartTracking(nId);
+    }
+    else {
+        ROS_INFO("Calibration failed for user %d", nId);
+        if (g_bNeedPose)
+            g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
+        else
+            g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
+    }
 }
 
 void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& capability, XnChar const* strPose, XnUserID nId, void* pCookie) {
@@ -69,8 +70,8 @@ void publishTransform(XnUserID const& user, XnSkeletonJoint const& joint, string
 
     XnFloat* m = joint_orientation.orientation.elements;
     KDL::Rotation rotation(m[0], m[1], m[2],
-    					   m[3], m[4], m[5],
-    					   m[6], m[7], m[8]);
+                           m[3], m[4], m[5],
+                           m[6], m[7], m[8]);
     double qx, qy, qz, qw;
     rotation.GetQuaternion(qx, qy, qz, qw);
 
@@ -83,7 +84,7 @@ void publishTransform(XnUserID const& user, XnSkeletonJoint const& joint, string
 
     // #4994
     tf::Transform change_frame;
-    change_frame.setOrigin(tf::Vector3(0, 0, 0));
+    change_frame.setOrigin(tf::Vector3(0, 0, 0));//g_Device
     tf::Quaternion frame_rotation;
     frame_rotation.setEulerZYX(1.5708, 0, 1.5708);
     change_frame.setRotation(frame_rotation);
@@ -126,75 +127,213 @@ void publishTransforms(const std::string& frame_id) {
     }
 }
 
-#define CHECK_RC(nRetVal, what)										\
-	if (nRetVal != XN_STATUS_OK)									\
-	{																\
-		ROS_ERROR("%s failed: %s", what, xnGetStatusString(nRetVal));\
-		return nRetVal;												\
-	}
+#define CHECK_RC(nRetVal, what)                                     \
+    if (nRetVal != XN_STATUS_OK)                                    \
+    {                                                               \
+        ROS_ERROR("%s failed: %s", what, xnGetStatusString(nRetVal));\
+        return nRetVal;                                             \
+    }
 
 int main(int argc, char **argv) {
-    ros::init(argc, argv, "openni_tracker");
+    ros::init(argc, argv, "tracker_1");
     ros::NodeHandle nh;
 
-    string configFilename = ros::package::getPath("openni_tracker") + "/openni_tracker.xml";
+    string configFilename = ros::package::getPath("multiple_kinect") + "/tracker.xml";
     XnStatus nRetVal = g_Context.InitFromXmlFile(configFilename.c_str());
     CHECK_RC(nRetVal, "InitFromXml");
 
-    nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_DEPTH, g_DepthGenerator);
+    XnStatus nRetVal = XN_STATUS_OK;
+
+    //xnLogInitFromXmlFile(csXmlFile);
+
+    nRetVal = g_Context.Init();
+    XN_IS_STATUS_OK(nRetVal);
+
+
+   // SELECTION OF THE DEVICE
+    xn::EnumerationErrors errors;
+    xn::Device g_Device;
+        // find devices
+    xn::NodeInfoList list;
+    xn::NodeInfoList list_depth;
+        nRetVal = g_Context.EnumerateProductionTrees(XN_NODE_TYPE_DEVICE, NULL, list, &errors);
+    XN_IS_STATUS_OK(nRetVal);
+
+    printf("The following devices were found:\n");
+        int i = 1;
+        for (xn::NodeInfoList::Iterator it = list.Begin(); it != list.End(); ++it, ++i)
+        {
+            xn::NodeInfo deviceNodeInfo = *it;
+
+            xn::Device deviceNode;
+            deviceNodeInfo.GetInstance(deviceNode);
+            XnBool bExists = deviceNode.IsValid();
+            if (!bExists)
+            {
+                g_Context.CreateProductionTree(deviceNodeInfo, deviceNode);
+                // this might fail.
+            }
+
+            if (deviceNode.IsValid() && deviceNode.IsCapabilitySupported(XN_CAPABILITY_DEVICE_IDENTIFICATION))
+            {
+                const XnUInt32 nStringBufferSize = 200;
+                XnChar strDeviceName[nStringBufferSize];
+                XnChar strSerialNumber[nStringBufferSize];
+
+                XnUInt32 nLength = nStringBufferSize;
+                deviceNode.GetIdentificationCap().GetDeviceName(strDeviceName, nLength);
+                nLength = nStringBufferSize;
+                deviceNode.GetIdentificationCap().GetSerialNumber(strSerialNumber, nLength);
+                printf("[%d] %s (%s)\n", i, strDeviceName, strSerialNumber);
+            }
+            else
+            {
+                printf("[%d] %s\n", i, deviceNodeInfo.GetCreationInfo());
+            }
+
+            // release the device if we created it
+            if (!bExists && deviceNode.IsValid())
+            {
+                deviceNode.Release();
+            }
+        }
+        printf("\n");
+        printf("Choose device to open (1): ");
+
+        int chosen = 1;
+        int nRetval = scanf("%d", &chosen);
+
+        // create it
+        xn::NodeInfoList::Iterator it = list.Begin();
+        for (i = 1; i < chosen; ++i)
+        {
+            it++;
+        }
+
+        xn::NodeInfo deviceNode = *it;
+        nRetVal = g_Context.CreateProductionTree(deviceNode, g_Device);
+        printf("Production tree of the device created.\n");
+
+    // SELECTION OF THE DEPTH GENERATOR
+        nRetVal = g_Context.EnumerateProductionTrees(XN_NODE_TYPE_DEPTH, NULL, list_depth, &errors);
+        XN_IS_STATUS_OK(nRetVal);
+
+        printf("The following devices were found:\n");
+            int i_depth = 1;
+            for (xn::NodeInfoList::Iterator it_depth = list_depth.Begin(); it_depth != list_depth.End(); ++it_depth, ++i_depth)
+            {
+                xn::NodeInfo depthNodeInfo = *it_depth;
+
+                xn::Device depthNode;
+                depthNodeInfo.GetInstance(depthNode);
+                XnBool bExists_depth = depthNode.IsValid();
+                if (!bExists_depth)
+                {
+                    g_Context.CreateProductionTree(depthNodeInfo, depthNode);
+                    // this might fail.
+                }
+
+                if (depthNode.IsValid() && depthNode.IsCapabilitySupported(XN_CAPABILITY_DEVICE_IDENTIFICATION))
+                {
+                    const XnUInt32 nStringBufferSize = 200;
+                    XnChar strDeviceName[nStringBufferSize];
+                    XnChar strSerialNumber[nStringBufferSize];
+
+                    XnUInt32 nLength = nStringBufferSize;
+                    depthNode.GetIdentificationCap().GetDeviceName(strDeviceName, nLength);
+                    nLength = nStringBufferSize;
+                    depthNode.GetIdentificationCap().GetSerialNumber(strSerialNumber, nLength);
+                    printf("[%d] %s (%s)\n", i, strDeviceName, strSerialNumber);
+                }
+                else
+                {
+                    printf("[%d] %s\n", i, depthNodeInfo.GetCreationInfo());
+                }
+
+                // release the device if we created it
+                if (!bExists_depth && depthNode.IsValid())
+                {
+                    depthNode.Release();
+                }
+            }
+            printf("\n");
+        printf("Choose device to open (1): ");
+
+        int chosen_depth = 1;
+        int nRetval_depth = scanf("%d", &chosen);
+
+        // create it
+        xn::NodeInfoList::Iterator it_depth = list_depth.Begin();
+        for (i = 1; i < chosen_depth; ++i)
+        {
+            it_depth++;
+        }
+
+        xn::NodeInfo depthNode = *it_depth;
+        nRetVal = g_Context.CreateProductionTree(depthNode, g_DepthGenerator);
+        printf("Production tree of the DepthGenerator created.\n");
+
+        nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_DEPTH, g_DepthGenerator);
+        printf("Production tree of the depth generator created.\n");
+        XN_IS_STATUS_OK(nRetVal);
+        printf("XN_IS_STATUS_OK(nRetVal).\n");
+
+
+
     CHECK_RC(nRetVal, "Find depth generator");
+     printf("CHECK_RC(nRetVal, Find depth generator);\n");
 
-	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
-	if (nRetVal != XN_STATUS_OK) {
-		nRetVal = g_UserGenerator.Create(g_Context);
-	    if (nRetVal != XN_STATUS_OK) {
-		    ROS_ERROR("NITE is likely missing: Please install NITE >= 1.5.2.21. Check the readme for download information. Error Info: User generator failed: %s", xnGetStatusString(nRetVal));
-            return nRetVal;
-	    }
-	}
+    nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
+    printf("User generator found.\n");
+    if (nRetVal != XN_STATUS_OK) {
+        nRetVal = g_UserGenerator.Create(g_Context);
+        printf("User generator created.\n");
+        CHECK_RC(nRetVal, "Find user generator");
+    }
 
-	if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_SKELETON)) {
-		ROS_INFO("Supplied user generator doesn't support skeleton");
-		return 1;
-	}
+    if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_SKELETON)) {
+        printf("Supplied user generator doesn't support skeleton.\n");
+        ROS_INFO("Supplied user generator doesn't support skeleton");
+        return 1;
+    }
 
     XnCallbackHandle hUserCallbacks;
-	g_UserGenerator.RegisterUserCallbacks(User_NewUser, User_LostUser, NULL, hUserCallbacks);
+    g_UserGenerator.RegisterUserCallbacks(User_NewUser, User_LostUser, NULL, hUserCallbacks);
 
-	XnCallbackHandle hCalibrationCallbacks;
-	g_UserGenerator.GetSkeletonCap().RegisterCalibrationCallbacks(UserCalibration_CalibrationStart, UserCalibration_CalibrationEnd, NULL, hCalibrationCallbacks);
+    XnCallbackHandle hCalibrationCallbacks;
+    g_UserGenerator.GetSkeletonCap().RegisterCalibrationCallbacks(UserCalibration_CalibrationStart, UserCalibration_CalibrationEnd, NULL, hCalibrationCallbacks);
 
-	if (g_UserGenerator.GetSkeletonCap().NeedPoseForCalibration()) {
-		g_bNeedPose = TRUE;
-		if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_POSE_DETECTION)) {
-			ROS_INFO("Pose required, but not supported");
-			return 1;
-		}
+    if (g_UserGenerator.GetSkeletonCap().NeedPoseForCalibration()) {
+        g_bNeedPose = TRUE;
+        if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_POSE_DETECTION)) {
+            ROS_INFO("Pose required, but not supported");
+            return 1;
+        }
 
-		XnCallbackHandle hPoseCallbacks;
-		g_UserGenerator.GetPoseDetectionCap().RegisterToPoseCallbacks(UserPose_PoseDetected, NULL, NULL, hPoseCallbacks);
+        XnCallbackHandle hPoseCallbacks;
+        g_UserGenerator.GetPoseDetectionCap().RegisterToPoseCallbacks(UserPose_PoseDetected, NULL, NULL, hPoseCallbacks);
 
-		g_UserGenerator.GetSkeletonCap().GetCalibrationPose(g_strPose);
-	}
+        g_UserGenerator.GetSkeletonCap().GetCalibrationPose(g_strPose);
+    }
 
-	g_UserGenerator.GetSkeletonCap().SetSkeletonProfile(XN_SKEL_PROFILE_ALL);
+    g_UserGenerator.GetSkeletonCap().SetSkeletonProfile(XN_SKEL_PROFILE_ALL);
 
-	nRetVal = g_Context.StartGeneratingAll();
-	CHECK_RC(nRetVal, "StartGenerating");
+    nRetVal = g_Context.StartGeneratingAll();
+    CHECK_RC(nRetVal, "StartGenerating");
 
-	ros::Rate r(30);
+    ros::Rate r(30);
 
-        
+
         ros::NodeHandle pnh("~");
-        string frame_id("openni_depth_frame");
+        string frame_id("/kinect1_depth_frame");
         pnh.getParam("camera_frame_id", frame_id);
-                
-	while (ros::ok()) {
-		g_Context.WaitAndUpdateAll();
-		publishTransforms(frame_id);
-		r.sleep();
-	}
 
-	g_Context.Shutdown();
-	return 0;
+    while (ros::ok()) {
+        g_Context.WaitAndUpdateAll();
+        publishTransforms(frame_id);
+        r.sleep();
+    }
+
+    g_Context.Shutdown();
+    return 0;
 }
