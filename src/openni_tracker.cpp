@@ -138,11 +138,12 @@ int main(int argc, char **argv) {
     ros::init(argc, argv, "tracker_1");
     ros::NodeHandle nh;
 
-    string configFilename = ros::package::getPath("multiple_kinect") + "/tracker.xml";
+    string configFilename = ros::package::getPath("openni_tracker") + "/openni_tracker.xml";
     XnStatus nRetVal = g_Context.InitFromXmlFile(configFilename.c_str());
     CHECK_RC(nRetVal, "InitFromXml");
 
-    XnStatus nRetVal = XN_STATUS_OK;
+    //XnStatus nRetVal = XN_STATUS_OK;
+    nRetVal = XN_STATUS_OK;
 
     //xnLogInitFromXmlFile(csXmlFile);
 
@@ -214,7 +215,7 @@ int main(int argc, char **argv) {
         nRetVal = g_Context.CreateProductionTree(deviceNode, g_Device);
         printf("Production tree of the device created.\n");
 
-    // SELECTION OF THE DEPTH GENERATOR
+     // SELECTION OF THE DEPTH GENERATOR
         nRetVal = g_Context.EnumerateProductionTrees(XN_NODE_TYPE_DEPTH, NULL, list_depth, &errors);
         XN_IS_STATUS_OK(nRetVal);
 
